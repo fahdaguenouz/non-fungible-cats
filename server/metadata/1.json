@@ -1,0 +1,6 @@
+{
+  "name": "Napping Cat 1",
+  "description": "The second napping cat in our collection.",
+  "image": "http://localhost:3030/metadata/1.jpg",
+  "future_ipfs_hash": "QmNappingCat1FutureHash"
+}

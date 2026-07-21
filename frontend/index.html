@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Napping Cats NFT</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+
+    <header>
+        <div class="logo">Napping Cats</div>
+        <button id="connectBtn" class="connect-btn">Connect Wallet</button>
+    </header>
+
+    <main>
+        <h1>Exclusive Cat Collection</h1>
+        <p class="subtitle">Digitized artwork of our most serene felines.</p>
+
+        <div id="nftGrid" class="grid">
+            <!-- NFT Cards will be injected here via JS -->
+        </div>
+    </main>
+
+    <!-- Modal for Listing -->
+    <div id="listModal" class="modal-overlay">
+        <div class="modal">
+            <h2>List Token for Sale</h2>
+            <div class="input-group">
+                <label for="listPrice">Price in ETH</label>
+                <input type="number" id="listPrice" step="0.001" min="0.001" placeholder="e.g. 0.05">
+            </div>
+            <div class="modal-actions">
+                <button id="cancelListBtn" class="btn-secondary">Cancel</button>
+                <button id="confirmListBtn" class="btn-primary">Confirm Listing</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">Message here</div>
+
+    <!-- Ethers.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
