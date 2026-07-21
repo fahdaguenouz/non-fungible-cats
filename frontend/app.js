@@ -146,7 +146,7 @@ async function renderNFTCard(tokenId, initialPriceEth) {
     card.className = 'nft-card';
     card.innerHTML = `
         <div class="image-container">
-            <img src="${metadata.image}" alt="${metadata.name}">
+            <img src="${metadata.image}" alt="${metadata.name}" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'200\\'><rect width=\\'200\\' height=\\'200\\' fill=\\'%23333\\'/><text x=\\'50%\\' y=\\'50%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'16\\' fill=\\'white\\'>Mystery Cat (Buy to reveal)</text></svg>'">
         </div>
         <div class="nft-info">
             <div>
