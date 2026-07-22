@@ -16,6 +16,7 @@ let signer;
 let contract;
 let userAddress = null;
 let currentTokenToList = null;
+let currentLoadId = 0;
 
 const connectBtn = document.getElementById('connectBtn');
 const nftGrid = document.getElementById('nftGrid');
@@ -24,6 +25,7 @@ const listModal = document.getElementById('listModal');
 const cancelListBtn = document.getElementById('cancelListBtn');
 const confirmListBtn = document.getElementById('confirmListBtn');
 const listPriceInput = document.getElementById('listPrice');
+const disconnectBtn = document.getElementById('disconnectBtn');
 
 // Initialize
 async function init() {
@@ -34,23 +36,29 @@ async function init() {
         // Check if already connected
         const accounts = await provider.listAccounts();
         if (accounts.length > 0) {
-            handleAccountsChanged(accounts);
+            await handleAccountsChanged(accounts);
+        } else {
+            await loadNFTs();
         }
 
         window.ethereum.on('accountsChanged', handleAccountsChanged);
         window.ethereum.on('chainChanged', () => window.location.reload());
     } else {
         showToast("Please install MetaMask to use this dApp.", true);
+        await loadNFTs();
     }
-    
-    await loadNFTs();
 }
 
 async function connectWallet() {
     if (!window.ethereum) return;
     try {
+        // Request permissions to force MetaMask to show the account picker
+        await window.ethereum.request({
+            method: 'wallet_requestPermissions',
+            params: [{ eth_accounts: {} }]
+        });
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        handleAccountsChanged(accounts);
+        await handleAccountsChanged(accounts);
     } catch (err) {
         console.error(err);
         showToast(err.message, true);
@@ -61,17 +69,31 @@ async function handleAccountsChanged(accounts) {
     if (accounts.length === 0) {
         userAddress = null;
         connectBtn.innerText = "Connect Wallet";
+        disconnectBtn.style.display = "none";
     } else {
         userAddress = accounts[0].address || accounts[0]; // depends on ethers version
         signer = await provider.getSigner();
         contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
         connectBtn.innerText = userAddress.substring(0,6) + '...' + userAddress.substring(38);
+        disconnectBtn.style.display = "block";
     }
     await loadNFTs(); // reload to update buttons
 }
 
+async function disconnectWallet() {
+    userAddress = null;
+    signer = null;
+    if (provider) {
+        contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+    }
+    connectBtn.innerText = "Connect Wallet";
+    disconnectBtn.style.display = "none";
+    showToast("Logged out successfully");
+    await loadNFTs();
+}
+
 async function loadNFTs() {
-    nftGrid.innerHTML = ''; // Clear grid
+    const loadId = ++currentLoadId;
 
     let initialPriceEth = "0.00";
     try {
@@ -81,95 +103,213 @@ async function loadNFTs() {
         console.error("Could not fetch initial price. Is contract deployed?", e);
     }
 
+    if (loadId !== currentLoadId) return;
+
     // We have 3 tokens: 0, 1, 2
+    const cards = [];
     for (let i = 0; i < 3; i++) {
-        await renderNFTCard(i, initialPriceEth);
+        const card = await renderNFTCard(i, initialPriceEth);
+        if (loadId !== currentLoadId) return;
+        if (card) {
+            cards.push(card);
+        }
     }
+
+    nftGrid.innerHTML = ''; // Clear grid
+    cards.forEach(card => nftGrid.appendChild(card));
 }
 
 async function renderNFTCard(tokenId, initialPriceEth) {
     let owner = null;
-    let priceEth = initialPriceEth;
-    let isListed = false;
+    let metadata = {
+        name: `Napping Cat #${tokenId}`,
+        description: "",
+        image: ""
+    };
 
-    // Check ownership
+    let isListed = false;
+    let priceEth = initialPriceEth;
+
+    // -------------------------
+    // Owner
+    // -------------------------
     try {
         owner = await contract.ownerOf(tokenId);
-    } catch (e) {
-        // Token is likely unminted
-        owner = null;
+    } catch {
+        owner = null; // Token not minted
     }
 
-    // Fetch Metadata
-    let metadata = { name: `Unknown Cat ${tokenId}`, image: "", description: "" };
+    // -------------------------
+    // Metadata
+    // -------------------------
     try {
-        // Our tokenURI returns "0.json" when unminted due to our override
-        const uri = await contract.tokenURI(tokenId); 
-        const res = await fetch(`${SERVER_URL}/metadata/${uri}`);
-        metadata = await res.json();
-    } catch (e) {
-        console.error(`Failed to fetch metadata for token ${tokenId}`, e);
+        const uri = await contract.tokenURI(tokenId);
+
+        const metadataUrl = uri.startsWith("http")
+            ? uri
+            : `${SERVER_URL}/metadata/${uri}`;
+
+        const response = await fetch(metadataUrl);
+
+        if (!response.ok) {
+            throw new Error("Metadata not found");
+        }
+
+        metadata = await response.json();
+
+        // Add cache-busting to image URL so the browser re-fetches after purchase
+        if (metadata.image) {
+            const sep = metadata.image.includes('?') ? '&' : '?';
+            metadata.image = metadata.image + sep + 't=' + Date.now();
+        }
+    } catch (err) {
+        console.error(`Metadata error for token ${tokenId}:`, err);
     }
 
-    // Check if listed on secondary market
+    // -------------------------
+    // Listing
+    // -------------------------
     if (owner) {
         try {
             const listing = await contract.listings(tokenId);
+
             if (listing.isListed) {
                 isListed = true;
                 priceEth = ethers.formatEther(listing.price);
             } else {
-                priceEth = "Not for sale";
+                priceEth = null;
             }
-        } catch(e) {}
-    } else {
-        isListed = true; // Initial sale is considered "listed" implicitly
-    }
-
-    // Build Card HTML
-    const isOwner = owner && userAddress && owner.toLowerCase() === userAddress.toLowerCase();
-    
-    let actionHtml = '';
-    if (isOwner) {
-        if (isListed) {
-            actionHtml = `<button class="btn-secondary" onclick="delistToken(${tokenId})">Delist</button>`;
-        } else {
-            actionHtml = `<button class="btn-primary" onclick="openListModal(${tokenId})">List for Sale</button>`;
+        } catch (err) {
+            console.error(err);
+            priceEth = null;
         }
-    } else if (isListed) {
-        actionHtml = `<button class="btn-primary" onclick="buyToken(${tokenId}, '${priceEth}')">Buy</button>`;
     } else {
-        actionHtml = `<button class="btn-primary" disabled>Not for Sale</button>`;
+        // Initial sale
+        isListed = true;
     }
 
-    const card = document.createElement('div');
-    card.className = 'nft-card';
+    // -------------------------
+    // Ownership
+    // -------------------------
+    const isOwner =
+        owner &&
+        userAddress &&
+        owner.toLowerCase() === userAddress.toLowerCase();
+
+    // -------------------------
+    // Buttons
+    // -------------------------
+    let actionHtml = "";
+
+    if (isOwner) {
+        actionHtml = isListed
+            ? `<button class="btn-secondary" onclick="delistToken(${tokenId})">
+                    Delist
+               </button>`
+            : `<button class="btn-primary" onclick="openListModal(${tokenId})">
+                    List for Sale
+               </button>`;
+    } else if (!owner) {
+        // Token is unminted — initial sale
+        actionHtml = `
+            <button
+                class="btn-primary"
+                onclick="buyToken(${tokenId}, '${priceEth}')">
+                Buy
+            </button>`;
+    } else if (isListed) {
+        // Token is owned by someone else AND listed for sale
+        actionHtml = `
+            <button
+                class="btn-primary"
+                onclick="buyToken(${tokenId}, '${priceEth}')">
+                Buy
+            </button>`;
+    } else {
+        // Token is owned by someone else but NOT listed
+        actionHtml = `
+            <button class="btn-primary" disabled>
+                Not for Sale
+            </button>`;
+    }
+
+    // -------------------------
+    // Owner Text
+    // -------------------------
+    let ownerText = "Unminted";
+
+    if (owner) {
+        ownerText = isOwner
+            ? "Owned by You"
+            : `Owner: ${owner.slice(0, 6)}...${owner.slice(-4)}`;
+    }
+
+    // -------------------------
+    // Price Text
+    // -------------------------
+    const priceText = priceEth
+        ? `${priceEth} ETH`
+        : "-";
+
+    // -------------------------
+    // Card
+    // -------------------------
+    const card = document.createElement("div");
+    card.className = "nft-card";
+
     card.innerHTML = `
         <div class="image-container">
-            <img src="${metadata.image}" alt="${metadata.name}" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'200\\'><rect width=\\'200\\' height=\\'200\\' fill=\\'%23333\\'/><text x=\\'50%\\' y=\\'50%\\' dominant-baseline=\\'middle\\' text-anchor=\\'middle\\' font-size=\\'16\\' fill=\\'white\\'>Mystery Cat (Buy to reveal)</text></svg>'">
+            <img
+                src="${metadata.image}"
+                alt="${metadata.name}"
+                loading="lazy"
+                onerror="
+                    this.onerror=null;
+                    this.src='data:image/svg+xml;utf8,
+                    <svg xmlns=\\'http://www.w3.org/2000/svg\\'
+                    width=\\'200\\'
+                    height=\\'200\\'>
+                    <rect width=\\'200\\'
+                    height=\\'200\\'
+                    fill=\\'%23333\\'/>
+                    <text
+                    x=\\'50%\\'
+                    y=\\'50%\\'
+                    dominant-baseline=\\'middle\\'
+                    text-anchor=\\'middle\\'
+                    fill=\\'white\\'
+                    font-size=\\'16\\'>
+                    Mystery Cat
+                    </text>
+                    </svg>';
+                ">
         </div>
+
         <div class="nft-info">
             <div>
                 <div class="nft-name">${metadata.name}</div>
-                <div class="nft-owner">${owner ? (isOwner ? 'Owned by You' : `Owner: ${owner.substring(0,6)}...`) : 'Unminted'}</div>
+                <div class="nft-owner">${ownerText}</div>
             </div>
+
             <div class="price-container">
                 <div class="price-label">Price</div>
-                <div class="price-value">${priceEth !== "Not for sale" ? priceEth + ' ETH' : '-'}</div>
+                <div class="price-value">${priceText}</div>
             </div>
         </div>
+
         <div class="actions">
             ${actionHtml}
         </div>
     `;
-    nftGrid.appendChild(card);
-}
 
+    return card;
+}
 // Interactions
 async function buyToken(tokenId, priceEth) {
     if (!signer) return showToast("Please connect wallet first", true);
     try {
         showToast("Processing transaction...");
+        if (priceEth === "Not for sale") return;
         const tx = await contract.buyToken(tokenId, { value: ethers.parseEther(priceEth) });
         await tx.wait();
         showToast("Purchase successful!");
@@ -194,6 +334,7 @@ async function confirmList() {
     try {
         listModal.classList.remove('active');
         showToast("Listing token...");
+        if (priceEth === "Not for sale") return;
         const tx = await contract.listToken(currentTokenToList, ethers.parseEther(priceEth));
         await tx.wait();
         showToast("Token listed successfully!");
@@ -229,6 +370,7 @@ function showToast(msg, isError = false) {
 
 // Event Listeners
 connectBtn.addEventListener('click', connectWallet);
+disconnectBtn.addEventListener('click', disconnectWallet);
 cancelListBtn.addEventListener('click', () => listModal.classList.remove('active'));
 confirmListBtn.addEventListener('click', confirmList);
 

@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/home/kali/Desktop/non-fungible-cats/contracts/BasicNFT.sol": {
-      "lastModificationDate": 1784640100428,
-      "contentHash": "cfd4e296472355ecdf81f18bfc0c9335",
+      "lastModificationDate": 1784715634292,
+      "contentHash": "946c2d15652c74420ef2a4f161fabd9d",
       "sourceName": "contracts/BasicNFT.sol",
       "solcConfig": {
         "version": "0.8.24",
@@ -763,8 +763,8 @@
       ]
     },
     "/home/kali/Desktop/non-fungible-cats/contracts/NappingCats.sol": {
-      "lastModificationDate": 1784640114628,
-      "contentHash": "5b5df8ecc250566159dbae2d477e874a",
+      "lastModificationDate": 1784717294796,
+      "contentHash": "de73a166a61f5fc4f9af2be6c1ec82d5",
       "sourceName": "contracts/NappingCats.sol",
       "solcConfig": {
         "version": "0.8.24",

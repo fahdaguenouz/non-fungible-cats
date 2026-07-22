@@ -52,6 +52,10 @@ app.get('/metadata/:id.json', (req, res) => {
 app.get('/metadata/:id.jpg', async (req, res) => {
     const id = req.params.id;
     const filePath = path.join(__dirname, 'metadata', `${id}.jpg`);
+
+    // Prevent browser from caching 403 responses so images reveal after purchase
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.set('Pragma', 'no-cache');
     
     if (!fs.existsSync(filePath)) {
         return res.status(404).send('Image not found');

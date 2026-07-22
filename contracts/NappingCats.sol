@@ -18,14 +18,14 @@ contract NappingCats is BasicNFT {
     }
 
     mapping(uint256 => Listing) public listings;
-    
+
     // Store URIs for the initial cats so they exist conceptually
     mapping(uint256 => string) private _initialURIs;
 
-    constructor(uint256 _initialBasePrice) BasicNFT("Napping Cats", "NCAT") {
+    constructor(uint256 _initialBasePrice) BasicNFT("Napping Cats") {
         initialBasePrice = _initialBasePrice;
         auctionStartTime = block.timestamp;
-        
+
         // Instantiate the first three cats with metadata
         _initialURIs[0] = "0.json";
         _initialURIs[1] = "1.json";
@@ -39,7 +39,8 @@ contract NappingCats is BasicNFT {
             return initialBasePrice;
         } else {
             uint256 startPrice = initialBasePrice * AUCTION_MULTIPLIER;
-            uint256 priceDecrease = ((startPrice - initialBasePrice) * timeElapsed) / AUCTION_DURATION;
+            uint256 priceDecrease = ((startPrice - initialBasePrice) *
+                timeElapsed) / AUCTION_DURATION;
             return startPrice - priceDecrease;
         }
     }
@@ -60,16 +61,16 @@ contract NappingCats is BasicNFT {
     // Buy a token
     function buyToken(uint256 tokenId) public payable {
         address owner = _ownerOf(tokenId); // internal openzeppelin check that returns address(0) if not minted
-        
+
         if (owner == address(0)) {
             // Token is unminted, this is an initial sale
-            require(tokenId >= 0 && tokenId <= 2, "Token does not exist");
+            require(tokenId < 3, "Invalid token");
             uint256 price = getCurrentInitialPrice();
             require(msg.value >= price, "Insufficient funds for initial sale");
-            
+
             _mint(msg.sender, tokenId);
             _setTokenURI(tokenId, _initialURIs[tokenId]);
-            
+
             // Refund excess
             if (msg.value > price) {
                 payable(msg.sender).transfer(msg.value - price);
@@ -78,15 +79,24 @@ contract NappingCats is BasicNFT {
             // Secondary market purchase
             Listing memory listing = listings[tokenId];
             require(listing.isListed, "Token is not listed for sale");
-            require(msg.value >= listing.price, "Insufficient funds for secondary purchase");
+            require(
+                msg.value >= listing.price,
+                "Insufficient funds for secondary purchase"
+            );
             require(owner != msg.sender, "Cannot buy your own token");
 
             // Transfer funds to owner
-            payable(owner).transfer(listing.price);
-            
+            (bool success, ) = payable(owner).call{value: listing.price}("");
+            require(success);
+
             // Refund excess to buyer
             if (msg.value > listing.price) {
-                payable(msg.sender).transfer(msg.value - listing.price);
+                uint256 refund = msg.value - listing.price;
+                (bool refundSuccess, ) = payable(msg.sender).call{
+                    value: refund
+                }("");
+
+                require(refundSuccess);
             }
 
             // Transfer token and remove listing
@@ -94,11 +104,16 @@ contract NappingCats is BasicNFT {
             delete listings[tokenId];
         }
     }
-    
+
     // Override tokenURI to return initial URI if not minted yet, to satisfy frontend display
-    function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
+    function tokenURI(
+        uint256 tokenId
+    ) public view virtual override returns (string memory) {
         if (_ownerOf(tokenId) == address(0)) {
-            require(bytes(_initialURIs[tokenId]).length > 0, "URI query for nonexistent token");
+            require(
+                bytes(_initialURIs[tokenId]).length > 0,
+                "URI query for nonexistent token"
+            );
             return _initialURIs[tokenId];
         }
         return super.tokenURI(tokenId);
